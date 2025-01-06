@@ -79,7 +79,6 @@ type Raft struct {
 	log             []LogEntry
 	nextIndex       []int
 	matchIndex      []int
-
 	// Your data here (PartA, PartB, PartC).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
@@ -122,9 +121,14 @@ func (rf *Raft) becomeLeaderLocked() {
 			"%s, Only candidate can become Leader", rf.role)
 		return
 	}
+	//
 	LOG(rf.me, rf.currentTerm, DLeader, "%s -> Leader, For T%d",
 		rf.role, rf.currentTerm)
 	rf.role = Leader
+	for peers := 0; peers < len(rf.peers); peers++ {
+		rf.matchIndex[peers] = 0
+		rf.nextIndex[peers] = len(rf.log)
+	}
 }
 
 type RequestVoteArgs struct {

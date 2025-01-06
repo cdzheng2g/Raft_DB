@@ -1,11 +1,14 @@
 package raft
 
-import "time"
+import (
+	"time"
+)
 
 type LogEntry struct {
 	CommandValid bool
 	Command      interface{}
 	CommandIndex int
+	Term         int
 }
 
 type AppendEntriesArgs struct {
@@ -46,6 +49,15 @@ func (rf *Raft) startReplication(term int) bool {
 			rf.becomeFollowerLocked(reply.Term)
 			return
 		}
+		if !reply.Success {
+			idx, term := args.PreLogIndex, args.PreLogTerm
+			if idx != 0 && term == rf.log[idx].Term {
+				idx--
+			}
+			rf.nextIndex[peer] = idx + 1
+		}
+		rf.matchIndex[peer] = args.PreLogIndex + len(args.Entries)
+		rf.nextIndex[peer] = rf.matchIndex[peer] + 1
 	}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
