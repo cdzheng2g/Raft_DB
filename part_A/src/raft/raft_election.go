@@ -15,7 +15,7 @@ func (rf *Raft) isElectionTimeoutLocked() bool {
 	electionStart := rf.electionStart
 	return time.Now().Sub(electionStart) > rf.electionTimeout
 }
-func (rf *Raft) startElection(term int) bool { /*TODO：发送方的要票逻辑，除开自己之外都进行要票，给自己投上票，过半数才申请成为leader*/
+func (rf *Raft) startElection(term int) { /*TODO：发送方的要票逻辑，除开自己之外都进行要票，给自己投上票，过半数才申请成为leader*/
 	votes := 0
 	askVoteFromPeer := func(peer int, args *RequestVoteArgs) {
 		reply := &RequestVoteReply{}
@@ -41,8 +41,9 @@ func (rf *Raft) startElection(term int) bool { /*TODO：发送方的要票逻辑
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	if rf.contextLostLocked(Candidate, term) {
-		return false
+		return
 	}
+	l := len(rf.log)
 	for i := 0; i < len(rf.peers); i++ { //这里的i等于peer
 		if i == rf.me {
 			//投票给自己
@@ -50,15 +51,18 @@ func (rf *Raft) startElection(term int) bool { /*TODO：发送方的要票逻辑
 			rf.votedFor = rf.me
 			continue
 		}
+
 		args := &RequestVoteArgs{
-			Term:        term,
-			CandidateId: rf.me,
+			Term:         term,
+			CandidateId:  rf.me,
+			LastLogTerm:  rf.log[l-1].Term,
+			LastLogIndex: l - 1,
 		}
 		go askVoteFromPeer(i, args)
 		/* 异步进行*/
 
 	}
-	return true
+	return
 }
 func (rf *Raft) electionTicker() { //设置过随机的超时时间、也设计了随机超市检查时间
 	//如果处于选举超时时间则开始选举
@@ -75,6 +79,15 @@ func (rf *Raft) electionTicker() { //设置过随机的超时时间、也设计�
 	}
 
 }
+func (rf *Raft) isMoreUpToDate(candidateIndex, candidateTerm int) bool { //选举日志的比较:取得当前日志长度，获取lastIndex、lastTerm
+	l := len(rf.log)
+	lastIndex, lastTerm := l-1, rf.log[l-1].Term
+	LOG(rf.me, rf.currentTerm, DVote, "Compare last log,Me:[%d]T%d,Candidate:[%d]T%d", lastIndex, lastTerm, candidateIndex, candidateTerm)
+	if lastTerm != candidateTerm {
+		return lastIndex > candidateIndex
+	}
+	return lastIndex > candidateIndex
+}
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
@@ -90,10 +103,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if rf.votedFor != -1 {
-		LOG(rf.me, rf.currentTerm, DVote, "-> S%d, Reject, Already voted S%d", args.CandidateId, rf.votedFor)
+		LOG(rf.me, rf.currentTerm, DVote, "-> S%d, Reject voted, Already voted S%d", args.CandidateId, rf.votedFor)
 		reply.voteGranted = false
 		return
 	}
+
+	if rf.isMoreUpToDate(args.CandidateId, args.LastLogTerm) {
+		LOG(rf.me, rf.currentTerm, DVote, "-> S%d,Reject voted,Candidate less up-to-date", args.CandidateId)
+	}
+
 	reply.voteGranted = true
 	rf.votedFor = args.CandidateId
 	rf.resetElectionTimerLocked()

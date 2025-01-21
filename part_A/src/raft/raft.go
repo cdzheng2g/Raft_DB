@@ -132,8 +132,10 @@ func (rf *Raft) becomeLeaderLocked() {
 }
 
 type RequestVoteArgs struct {
-	Term        int
-	CandidateId int
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 func (rf *Raft) contextLostLocked(candidate Role, term int) bool {
